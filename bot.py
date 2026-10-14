@@ -12,7 +12,7 @@ if not TOKEN:
     raise SystemExit("Токен не найден. Создайте файл .env со строкой BOT_TOKEN=...")
 
 bot = telebot.TeleBot(TOKEN)
-DB_NAME = "quiz_game.db"
+DB_NAME = "/tmp/quiz_game.db"
 
 
 def init_db():
