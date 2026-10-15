@@ -254,6 +254,7 @@ def handle_text(message):
             message_thread_id=message.message_thread_id
         )
 
+
 def set_bot_commands():
     commands = [
         telebot.types.BotCommand("start", "Перезапустить бота и показать справку"),
@@ -261,7 +262,12 @@ def set_bot_commands():
         telebot.types.BotCommand("stop", "Сдаться, узнать число и сбросить игру"),
         telebot.types.BotCommand("help", "Показать правила игры и список команд")
     ]
-    bot.set_my_commands(commands)
+
+    # 1. Настройка для личных сообщений (работает по умолчанию)
+    bot.set_my_commands(commands, scope=telebot.types.BotCommandScopeAllPrivateChats())
+
+    # 2. Настройка для ГРУПП (чтобы подсказки всплывали в чате комментариев!)
+    bot.set_my_commands(commands, scope=telebot.types.BotCommandScopeAllGroupChats())
 
 if __name__ == "__main__":
     init_db()  # Обязательно инициализируем БД перед запуском
