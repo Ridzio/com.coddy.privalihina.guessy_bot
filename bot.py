@@ -3,6 +3,7 @@ import random
 import sqlite3
 import telebot
 from dotenv import load_dotenv
+import html
 
 # Загружаем переменные из файла .env
 load_dotenv()
@@ -88,12 +89,15 @@ def parse_int(text):
 
 
 def get_user_mention(message):
-    """Функция создания упоминания конкретного автора сообщения."""
+    """Безопасно создает упоминание пользователя через HTML-разметку."""
     user = message.from_user
     if user and user.username:
-        return f"@{user.username}"
+        # Экранируем юзернейм на случай странных символов
+        return f"@{html.escape(user.username)}"
     elif user and user.first_name:
-        return f"[{user.first_name}](tg://user?id={user.id})"
+        # Экранируем имя, чтобы символы вроде < > или * не ломали теги ссылки
+        safe_name = html.escape(user.first_name)
+        return f'<a href="tg://user?id={user.id}">{safe_name}</a>'
     return "Игрок"
 
 
@@ -248,7 +252,7 @@ def handle_text(message):
             f"🎉 {user_mention}, ты угадал число группы! Моё число было {secret}.\n"
             f"Всего попыток потрачено: {game['tries']}.\n"
             "Сыграем ещё? /play",
-            parse_mode="Markdown",
+            parse_mode="HTML",  # 🌟 ЗАМЕНИЛИ НА HTML
             message_thread_id=message.message_thread_id
         )
         delete_game(chat_id)
@@ -257,20 +261,18 @@ def handle_text(message):
             chat_id,
             f"Общие попытки закончились 😢 {user_mention}, моё число было {secret}.\n"
             "Попробуете ещё раз вместе? /play",
-            parse_mode="Markdown",
+            parse_mode="HTML",  # 🌟 ЗАМЕНИЛИ НА HTML
             message_thread_id=message.message_thread_id
         )
         delete_game(chat_id)
     else:
         hint = "больше" if guess < secret else "меньше"
-        # Полностью закрытая и безопасная отправка подсказки (без предупреждений PyCharm)
         bot.send_message(
             chat_id,
             f"🎲 {user_mention}, моё число {hint}. Осталось общих попыток: {left}.",
-            parse_mode="Markdown",
+            parse_mode="HTML",  # 🌟 ЗАМЕНИЛИ НА HTML
             message_thread_id=message.message_thread_id
         )
-
 
 if __name__ == "__main__":
     init_db()  # Обязательно инициализируем БД перед запуском
