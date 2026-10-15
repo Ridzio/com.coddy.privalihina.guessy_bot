@@ -2,6 +2,7 @@ import os
 import random
 import sqlite3
 import telebot
+import threading  # Не забываем для работы Flask, если запускаете на Render
 from dotenv import load_dotenv
 
 # Загружаем переменные из файла .env
@@ -52,7 +53,7 @@ def get_game(chat_id):
 
 
 def save_game(chat_id, game):
-    """Сохраняет или обновляет состояние игры в базе данных."""
+    """Сохраняет или обновляет состояние игры в базы данных."""
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -85,6 +86,16 @@ def parse_int(text):
         return None
 
 
+# 🌟 ШАГ 1. Функция создания упоминания пользователя
+def get_user_mention(message):
+    user = message.from_user
+    if user and user.username:
+        return f"@{user.username}"
+    elif user and user.first_name:
+        return f"[{user.first_name}](tg://user?id={user.id})"
+    return "Игрок"
+
+
 @bot.message_handler(commands=["start", "help"])
 def start(message):
     bot.send_message(
@@ -94,6 +105,7 @@ def start(message):
         "/play — начать новую игру\n"
         "/stop — сдаться и узнать число\n"
         "/help — показать это сообщение",
+        message_thread_id=message.message_thread_id  # ✨ Привязка к ветке/комментарию
     )
 
 
@@ -104,6 +116,7 @@ def play(message):
     bot.send_message(
         chat_id,
         "Введи диапазон двумя числами через пробел.\nНапример: 1 100",
+        message_thread_id=message.message_thread_id  # ✨ Привязка к ветке/комментарию
     )
 
 
@@ -117,9 +130,14 @@ def stop(message):
             chat_id,
             f"Игра остановлена. Моё число было {game['secret']}.\n"
             "Новая игра: /play",
+            message_thread_id=message.message_thread_id  # ✨ Привязка к ветке/комментарию
         )
     else:
-        bot.send_message(chat_id, "Сейчас нет активной игры. Начать: /play")
+        bot.send_message(
+            chat_id,
+            "Сейчас нет активной игры. Начать: /play",
+            message_thread_id=message.message_thread_id  # ✨ Привязка к ветке/комментарию
+        )
 
 
 @bot.message_handler(content_types=["text"])
@@ -128,33 +146,53 @@ def handle_text(message):
     game = get_game(chat_id)
 
     if game is None:
-        bot.send_message(chat_id, "Чтобы сыграть, напиши /play")
+        bot.send_message(
+            chat_id,
+            "Чтобы сыграть, напиши /play",
+            message_thread_id=message.message_thread_id  # ✨ Привязка к ветке/комментарию
+        )
         return
 
     # --- Этап 1: ввод диапазона ---
     if game["stage"] == "range":
         parts = message.text.split()
         if len(parts) != 2 or parse_int(parts[0]) is None or parse_int(parts[1]) is None:
-            bot.send_message(chat_id, "Нужно два числа через пробел, например: 1 100")
+            bot.send_message(
+                chat_id,
+                "Нужно два числа через пробел, например: 1 100",
+                message_thread_id=message.message_thread_id
+            )
             return
 
         low, high = parse_int(parts[0]), parse_int(parts[1])
         if low >= high:
-            bot.send_message(chat_id, "Первое число должно быть меньше второго. Попробуй ещё раз.")
+            bot.send_message(
+                chat_id,
+                "Первое число должно быть меньше второго. Попробуй ещё раз.",
+                message_thread_id=message.message_thread_id
+            )
             return
 
         game["low"] = low
         game["high"] = high
         game["stage"] = "attempts"
         save_game(chat_id, game)
-        bot.send_message(chat_id, "Сколько попыток даём? Введи число, например: 7")
+        bot.send_message(
+            chat_id,
+            "Сколько попыток даём? Введи число, например: 7",
+            message_thread_id=message.message_thread_id
+        )
         return
 
     # --- Этап 2: ввод количества попыток ---
     if game["stage"] == "attempts":
         max_attempts = parse_int(message.text)
         if max_attempts is None or max_attempts < 1:
-            bot.send_message(chat_id, "Нужно целое число больше нуля, например: 7")
+            bot.send_message(
+                chat_id,
+                "Нужно целое число больше нуля, например: 7",
+                message_thread_id=message.message_thread_id
+            )
             return
 
         game["max_attempts"] = max_attempts
@@ -166,32 +204,44 @@ def handle_text(message):
             chat_id,
             f"Я загадал число от {game['low']} до {game['high']}.\n"
             f"У тебя {max_attempts} попыток. Угадывай!",
+            message_thread_id=message.message_thread_id
         )
         return
 
     # --- Этап 3: сама игра ---
     guess = parse_int(message.text)
     if guess is None:
-        bot.send_message(chat_id, "Пришли число 🙂")
+        bot.send_message(
+            chat_id,
+            "Пришли число 🙂",
+            message_thread_id=message.message_thread_id
+        )
         return
 
     game["tries"] += 1
     secret = game["secret"]
     left = game["max_attempts"] - game["tries"]
 
+    # 🌟 ШАГ 2. Получаем имя автора текущего сообщения
+    user_mention = get_user_mention(message)
+
     if guess == secret:
         bot.send_message(
             chat_id,
-            f"🎉 Ты угадал! Моё число {secret}.\n"
+            f"🎉 {user_mention}, ты угадал! Моё число {secret}.\n"
             f"Попыток потрачено: {game['tries']}.\n"
             "Сыграем ещё? /play",
+            parse_mode="Markdown",  # ✨ Обязательно для красивых упоминаний
+            message_thread_id=message.message_thread_id
         )
         delete_game(chat_id)
     elif left == 0:
         bot.send_message(
             chat_id,
-            f"Попытки закончились 😢 Моё число было {secret}.\n"
+            f"Попытки закончились 😢 {user_mention}, моё число было {secret}.\n"
             "Попробуешь ещё раз? /play",
+            parse_mode="Markdown",  # ✨ Обязательно для красивых упоминаний
+            message_thread_id=message.message_thread_id
         )
         delete_game(chat_id)
     else:
@@ -199,7 +249,9 @@ def handle_text(message):
         save_game(chat_id, game)
         bot.send_message(
             chat_id,
-            f"Моё число {hint}. Осталось попыток: {left}.",
+            f"🎲 {user_mention}, моё число {hint}. Осталось попыток: {left}.",
+            parse_mode="Markdown",  # ✨ Обязательно для красивых упоминаний
+            message_thread_id=message.message_thread_id
         )
 
 
