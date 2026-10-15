@@ -265,5 +265,6 @@ def set_bot_commands():
 
 if __name__ == "__main__":
     init_db()  # Обязательно инициализируем БД перед запуском
+    set_bot_commands()  # 🌟 Устанавливаем подсказки в интерфейс Telegram
     print("Бот запущен с поддержкой базы данных...")
     bot.infinity_polling()
