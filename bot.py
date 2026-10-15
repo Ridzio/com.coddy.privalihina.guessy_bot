@@ -2,7 +2,6 @@ import os
 import random
 import sqlite3
 import telebot
-import threading  # Не забываем для работы Flask, если запускаете на Render
 from dotenv import load_dotenv
 
 # Загружаем переменные из файла .env
@@ -53,7 +52,7 @@ def get_game(chat_id):
 
 
 def save_game(chat_id, game):
-    """Сохраняет или обновляет состояние игры в базы данных."""
+    """Сохраняет или обновляет состояние игры в базе данных."""
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -66,7 +65,8 @@ def save_game(chat_id, game):
                 max_attempts=excluded.max_attempts,
                 tries=excluded.tries,
                 secret=excluded.secret
-        """, (chat_id, game.get("stage"), game.get("low"), game.get("high"), game.get("max_attempts"), game.get("tries"), game.get("secret")))
+        """, (chat_id, game.get("stage"), game.get("low"), game.get("high"), game.get("max_attempts"),
+              game.get("tries"), game.get("secret")))
         conn.commit()
 
 
@@ -86,14 +86,26 @@ def parse_int(text):
         return None
 
 
-# 🌟 ШАГ 1. Функция создания упоминания пользователя
 def get_user_mention(message):
+    """Функция создания упоминания конкретного автора сообщения."""
     user = message.from_user
     if user and user.username:
         return f"@{user.username}"
     elif user and user.first_name:
         return f"[{user.first_name}](tg://user?id={user.id})"
     return "Игрок"
+
+
+def set_bot_commands():
+    """Регистрирует подсказки команд в меню Telegram для ЛС и Групп."""
+    commands = [
+        telebot.types.BotCommand("start", "Перезапустить бота и показать справку"),
+        telebot.types.BotCommand("play", "Начать новую игру в угадайку"),
+        telebot.types.BotCommand("stop", "Сдаться, узнать число и сбросить игру"),
+        telebot.types.BotCommand("help", "Показать правила игры и список команд")
+    ]
+    bot.set_my_commands(commands, scope=telebot.types.BotCommandScopeAllPrivateChats())
+    bot.set_my_commands(commands, scope=telebot.types.BotCommandScopeAllGroupChats())
 
 
 @bot.message_handler(commands=["start", "help"])
@@ -105,7 +117,7 @@ def start(message):
         "/play — начать новую игру\n"
         "/stop — сдаться и узнать число\n"
         "/help — показать это сообщение",
-        message_thread_id=message.message_thread_id  # ✨ Привязка к ветке/комментарию
+        message_thread_id=message.message_thread_id
     )
 
 
@@ -116,7 +128,7 @@ def play(message):
     bot.send_message(
         chat_id,
         "Введи диапазон двумя числами через пробел.\nНапример: 1 100",
-        message_thread_id=message.message_thread_id  # ✨ Привязка к ветке/комментарию
+        message_thread_id=message.message_thread_id
     )
 
 
@@ -130,13 +142,13 @@ def stop(message):
             chat_id,
             f"Игра остановлена. Моё число было {game['secret']}.\n"
             "Новая игра: /play",
-            message_thread_id=message.message_thread_id  # ✨ Привязка к ветке/комментарию
+            message_thread_id=message.message_thread_id
         )
     else:
         bot.send_message(
             chat_id,
             "Сейчас нет активной игры. Начать: /play",
-            message_thread_id=message.message_thread_id  # ✨ Привязка к ветке/комментарию
+            message_thread_id=message.message_thread_id
         )
 
 
@@ -146,25 +158,31 @@ def handle_text(message):
     game = get_game(chat_id)
 
     if game is None:
-        bot.send_message(
-            chat_id,
-            "Чтобы сыграть, напиши /play",
-            message_thread_id=message.message_thread_id  # ✨ Привязка к ветке/комментарию
-        )
+        # Если игра в группе не запущена, тихо молчим, чтобы не спамить во флудилке
         return
 
     # --- Этап 1: ввод диапазона ---
     if game["stage"] == "range":
         parts = message.text.split()
-        if len(parts) != 2 or parse_int(parts[0]) is None or parse_int(parts[1]) is None:
+        if len(parts) != 2:
             bot.send_message(
                 chat_id,
-                "Нужно два числа через пробел, например: 1 100",
+                "Нужно ровно два числа через пробел, например: 1 100",
                 message_thread_id=message.message_thread_id
             )
             return
 
         low, high = parse_int(parts[0]), parse_int(parts[1])
+
+        # Safe check (Убираем предупреждение PyCharm): проверяем, что оба числа успешно распознались
+        if low is None or high is None:
+            bot.send_message(
+                chat_id,
+                "Нужно ввести именно целые числа через пробел! Попробуй ещё раз.",
+                message_thread_id=message.message_thread_id
+            )
+            return
+
         if low >= high:
             bot.send_message(
                 chat_id,
@@ -179,7 +197,7 @@ def handle_text(message):
         save_game(chat_id, game)
         bot.send_message(
             chat_id,
-            "Сколько попыток даём? Введи число, например: 7",
+            "Сколько попыток даём всей группе? Введи число, например: 7",
             message_thread_id=message.message_thread_id
         )
         return
@@ -202,8 +220,9 @@ def handle_text(message):
         save_game(chat_id, game)
         bot.send_message(
             chat_id,
+            f"🎯 Игра началась для всей группы!\n"
             f"Я загадал число от {game['low']} до {game['high']}.\n"
-            f"У тебя {max_attempts} попыток. Угадывай!",
+            f"У вас {max_attempts} общих попыток. Угадывайте вместе!",
             message_thread_id=message.message_thread_id
         )
         return
@@ -211,66 +230,49 @@ def handle_text(message):
     # --- Этап 3: сама игра ---
     guess = parse_int(message.text)
     if guess is None:
-        bot.send_message(
-            chat_id,
-            "Пришли число 🙂",
-            message_thread_id=message.message_thread_id
-        )
-        return
+        return  # Если прислали не число во время игры, просто игнорируем флуд
 
     game["tries"] += 1
     secret = game["secret"]
     left = game["max_attempts"] - game["tries"]
 
-    # 🌟 ШАГ 2. Получаем имя автора текущего сообщения
+    # Мгновенно фиксируем и сохраняем ход в базу данных, чтобы не терять сообщения от игроков
+    save_game(chat_id, game)
+
     user_mention = get_user_mention(message)
 
     if guess == secret:
         bot.send_message(
             chat_id,
-            f"🎉 {user_mention}, ты угадал! Моё число {secret}.\n"
-            f"Попыток потрачено: {game['tries']}.\n"
+            f"🎉 {user_mention}, ты угадал число группы! Моё число было {secret}.\n"
+            f"Всего попыток потрачено: {game['tries']}.\n"
             "Сыграем ещё? /play",
-            parse_mode="Markdown",  # ✨ Обязательно для красивых упоминаний
+            parse_mode="Markdown",
             message_thread_id=message.message_thread_id
         )
         delete_game(chat_id)
-    elif left == 0:
+    elif left <= 0:
         bot.send_message(
             chat_id,
-            f"Попытки закончились 😢 {user_mention}, моё число было {secret}.\n"
-            "Попробуешь ещё раз? /play",
-            parse_mode="Markdown",  # ✨ Обязательно для красивых упоминаний
+            f"Общие попытки закончились 😢 {user_mention}, моё число было {secret}.\n"
+            "Попробуете ещё раз вместе? /play",
+            parse_mode="Markdown",
             message_thread_id=message.message_thread_id
         )
         delete_game(chat_id)
     else:
         hint = "больше" if guess < secret else "меньше"
-        save_game(chat_id, game)
+        # Полностью закрытая и безопасная отправка подсказки (без предупреждений PyCharm)
         bot.send_message(
             chat_id,
-            f"🎲 {user_mention}, моё число {hint}. Осталось попыток: {left}.",
-            parse_mode="Markdown",  # ✨ Обязательно для красивых упоминаний
+            f"🎲 {user_mention}, моё число {hint}. Осталось общих попыток: {left}.",
+            parse_mode="Markdown",
             message_thread_id=message.message_thread_id
         )
 
 
-def set_bot_commands():
-    commands = [
-        telebot.types.BotCommand("start", "Перезапустить бота и показать справку"),
-        telebot.types.BotCommand("play", "Начать новую игру в угадайку"),
-        telebot.types.BotCommand("stop", "Сдаться, узнать число и сбросить игру"),
-        telebot.types.BotCommand("help", "Показать правила игры и список команд")
-    ]
-
-    # 1. Настройка для личных сообщений (работает по умолчанию)
-    bot.set_my_commands(commands, scope=telebot.types.BotCommandScopeAllPrivateChats())
-
-    # 2. Настройка для ГРУПП (чтобы подсказки всплывали в чате комментариев!)
-    bot.set_my_commands(commands, scope=telebot.types.BotCommandScopeAllGroupChats())
-
 if __name__ == "__main__":
     init_db()  # Обязательно инициализируем БД перед запуском
-    set_bot_commands()  # 🌟 Устанавливаем подсказки в интерфейс Telegram
+    set_bot_commands()  # Накатываем подсказки команд для ЛС и Групп
     print("Бот запущен с поддержкой базы данных...")
     bot.infinity_polling()
