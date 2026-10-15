@@ -254,6 +254,14 @@ def handle_text(message):
             message_thread_id=message.message_thread_id
         )
 
+def set_bot_commands():
+    commands = [
+        telebot.types.BotCommand("start", "Перезапустить бота и показать справку"),
+        telebot.types.BotCommand("play", "Начать новую игру в угадайку"),
+        telebot.types.BotCommand("stop", "Сдаться, узнать число и сбросить игру"),
+        telebot.types.BotCommand("help", "Показать правила игры и список команд")
+    ]
+    bot.set_my_commands(commands)
 
 if __name__ == "__main__":
     init_db()  # Обязательно инициализируем БД перед запуском
