@@ -40,13 +40,14 @@ def get_game(chat_id):
         cursor.execute("SELECT stage, low, high, max_attempts, tries, secret FROM games WHERE chat_id = ?", (chat_id,))
         row = cursor.fetchone()
         if row:
+            # 🌟 ЧЁТКО РАСКЛАДЫВАЕМ ЭЛЕМЕНТЫ СТРОКИ ПО ИНДЕКСАМ И ПРИВОДИМ К ТИПАМ
             return {
-                "stage": row[0],
-                "low": row[1],
-                "high": row[2],
-                "max_attempts": row[3],
-                "tries": row[4],
-                "secret": row[5]
+                "stage": str(row[0]),  # Текст стадии (строка)
+                "low": int(row[1]) if row[1] is not None else None,
+                "high": int(row[2]) if row[2] is not None else None,
+                "max_attempts": int(row[3]) if row[3] is not None else None,
+                "tries": int(row[4]) if row[4] is not None else None,
+                "secret": int(row[5]) if row[5] is not None else None
             }
         return None
 
